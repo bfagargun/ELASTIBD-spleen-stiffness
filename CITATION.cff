@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite both the software and the manuscript it accompanies."
+title: "ELASTIBD spleen stiffness: analysis code"
+abstract: >-
+  Python code reproducing the tables, figures and statistical models of the
+  ELASTIBD analysis of cumulative azathioprine exposure and markedly elevated
+  spleen stiffness in inflammatory bowel disease, including a Firth penalised
+  logistic regression implementation and a reproduction check against the
+  published numbers.
+type: software
+license: MIT
+version: 1.0.0
+date-released: 2026-09-14
+repository-code: "https://github.com/bfagargun/ELASTIBD-spleen-stiffness"
+keywords:
+  - spleen stiffness
+  - transient elastography
+  - azathioprine
+  - porto-sinusoidal vascular disease
+  - inflammatory bowel disease
+authors:
+  - family-names: "Ağargün"
+    given-names: "Besim Fazıl"
+    orcid: "https://orcid.org/0000-0002-3933-1881"
+    affiliation: "Division of Gastroenterohepatology, Department of Internal Medicine, Istanbul Faculty of Medicine, Istanbul University, Istanbul, Turkey"
+    email: "bfagargun@istanbul.edu.tr"
+  - family-names: "Işık"
+    given-names: "Burce"
+    affiliation: "Department of Internal Medicine, Max Rady College of Medicine, University of Manitoba, Winnipeg, Canada"
+  - family-names: "Akyüz"
+    given-names: "Filiz"
+    affiliation: "Division of Gastroenterohepatology, Department of Internal Medicine, Istanbul Faculty of Medicine, Istanbul University, Istanbul, Turkey"

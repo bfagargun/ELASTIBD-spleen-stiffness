@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# Individual participant data must never be committed to this repository.
+# ---------------------------------------------------------------------------
+data/
+*.sav
+*.por
+*.zsav
+*.xlsx
+*.xls
+*.csv
+*.dta
+*.rds
+*.parquet
+repeated_examinations.csv
+
+# generated results
+outputs/
+!outputs/.gitkeep
+
+# python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+
+# editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
