@@ -85,19 +85,26 @@ def gmr(df, exposure, unit=1.0, covars=("age", "male", "bmi", "alcohol_any", "ls
 
 
 def gmr_categorical(df, cat_col, reference, covars=("age", "male", "bmi", "alcohol_any", "lsm")):
-    """Geometric mean ratios for each level of a categorical exposure."""
-    d = df.dropna(subset=["log_ssm", cat_col] + list(covars)).copy()
-    dummies = pd.get_dummies(d[cat_col].astype(str), prefix="lvl", dtype=float)
-    ref_col = f"lvl_{reference}"
-    dummies = dummies.drop(columns=[ref_col])
-    X = sm.add_constant(pd.concat([dummies, d[list(covars)].astype(float)], axis=1))
-    res = sm.OLS(d["log_ssm"].astype(float), X).fit(cov_type="HC3")
+    """Geometric mean ratio for each level of a categorical exposure.
+
+    Each level is compared with the reference level in its own model, fitted on
+    the two levels being compared only (rather than one model carrying all
+    levels), so that each estimate is the adjusted contrast between those two
+    groups and is unaffected by the other categories.
+    """
     out = {}
-    for col in dummies.columns:
-        ci = res.conf_int().loc[col]
-        out[col.replace("lvl_", "")] = dict(
-            gmr=float(np.exp(res.params[col])), low=float(np.exp(ci.iloc[0])),
-            high=float(np.exp(ci.iloc[1])), p=float(res.pvalues[col]))
+    levels = [l for l in df[cat_col].dropna().astype(str).unique() if l != str(reference)]
+    for lvl in levels:
+        d = df[df[cat_col].astype(str).isin([str(reference), lvl])].dropna(
+            subset=["log_ssm"] + list(covars)).copy()
+        d["_exposed"] = (d[cat_col].astype(str) == lvl).astype(float)
+        cols = _drop_constant(d, ["_exposed"] + list(covars), "_exposed")
+        X = sm.add_constant(d[cols].astype(float))
+        res = sm.OLS(d["log_ssm"].astype(float), X).fit(cov_type="HC3")
+        ci = res.conf_int().loc["_exposed"]
+        out[lvl] = dict(gmr=float(np.exp(res.params["_exposed"])),
+                        low=float(np.exp(ci.iloc[0])), high=float(np.exp(ci.iloc[1])),
+                        p=float(res.pvalues["_exposed"]), n=int(res.nobs))
     return out
 
 

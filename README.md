@@ -67,14 +67,14 @@ python verify.py                  # reproduction check only
 
 ## Reproduction check
 
-`verify.py` recomputes 87 numbers reported in the manuscript — the study
+`verify.py` recomputes 96 numbers reported in the manuscript — the study
 population, the spleen-stiffness distribution and reference limits, the
 geometric mean ratios, the Cochran–Armitage trend tests, all Firth models of
 Table 3B, and the discordance and haematological results — and compares each
 with the published value. It exits with a non-zero status if any check fails.
 
 ```
-87 of 87 checks passed.
+96 of 96 checks passed.
 ```
 
 ## Files
@@ -104,6 +104,9 @@ with the published value. It exits with a non-zero status if any check fails.
   equally spaced scores and non-users as the lowest category.
 * Quantile regression (25th, 50th, 75th and 90th percentiles) is used for the
   distributional analyses.
+* Categorical exposure levels (Table 2A) are compared with their reference
+  level in pairwise models fitted on the two levels being compared, so each
+  contrast is unaffected by the remaining categories.
 * Complete-case analysis throughout; the number of observations is reported for
   every model. Covariates with no variation inside a subset (for example sex in
   a sex-stratified analysis) are dropped automatically.

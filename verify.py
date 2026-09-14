@@ -85,6 +85,20 @@ def main() -> int:
     c = gmr(users, "aza_cumulative_g", 100)
     chk("adjusted GMR per 100 g", c["gmr"], 1.00, 0.005)
 
+    # --- Table 2A: categorical exposure levels (pairwise adjusted GMRs) -----
+    from analysis_tables import gmr_categorical
+    for df, col, ref_level, expected in [
+        (pat, "aza_combo", "Neither", {"Anti-TNF without AZA": 1.00,
+                                       "AZA monotherapy": 0.99, "AZA + anti-TNF": 1.05}),
+        (users, "aza_dose_cat", "100 mg", {"<= 75 mg": 1.04, "> 100 mg": 1.20}),
+        (users, "aza_duration_cat", "<= 12 months", {"13-48 months": 1.01,
+                                                     "> 48 months": 1.01}),
+        (users, "aza_cumulative_cat", "<= 100 g", {"101-300 g": 0.92, "> 300 g": 0.96}),
+    ]:
+        res = gmr_categorical(df, col, ref_level)
+        for lvl, want in expected.items():
+            chk(f"Table 2A GMR, {lvl} vs {ref_level}", res[lvl]["gmr"], want, 0.005)
+
     # --- tail analyses -----------------------------------------------------
     grp = pat.dropna(subset=["aza_cumulative_cat4"]).groupby("aza_cumulative_cat4", observed=False)
     counts = grp.agg(n=("ssm", "size"), e=("ssm_ge_40", "sum"))
