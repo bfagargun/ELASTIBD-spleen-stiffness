@@ -19,7 +19,8 @@ from analysis_supplementary import SSM_BINS, _quantreg, _ssm_category
 from analysis_tables import firth_or, gmr
 from firth import cochran_armitage, wilson_ci
 
-FIGDIR = Path(__file__).resolve().parent.parent / "outputs" / "figures"
+_HERE = Path(__file__).resolve().parent
+FIGDIR = (_HERE.parent if _HERE.name == "code" else _HERE) / "outputs" / "figures"
 BLUE, ORANGE, GREY, GREEN = "#3b6ea5", "#d1701a", "#8a8a8a", "#2e7d5b"
 plt.rcParams.update({"font.size": 8, "font.family": "DejaVu Sans", "axes.linewidth": 0.8,
                      "savefig.facecolor": "white"})

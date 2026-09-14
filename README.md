@@ -29,13 +29,13 @@ The scripts expect two SPSS files:
 | `listev20-sadecehastalar.sav` | patients with IBD |
 | `listev18_hastavekontrol.sav` | patients plus the healthy reference sample |
 
-`code/prep.py` drops the direct identifiers contained in those files (name,
+`prep.py` drops the direct identifiers contained in those files (name,
 national identity number, telephone number, date of birth, hospital file
 number, examination date, city) immediately after reading them; they are not
 used in any analysis and never reach an output file. The variables the analysis
-does use are listed in [docs/data_dictionary.md](docs/data_dictionary.md), and
+does use are listed in [data_dictionary.md](data_dictionary.md), and
 the derived variables and thresholds in
-[docs/derived_variables.md](docs/derived_variables.md).
+[derived_variables.md](derived_variables.md).
 
 ## Usage
 
@@ -48,7 +48,6 @@ pip install -r requirements.txt
 mkdir data                      # place the two .sav files here (not tracked)
 export ELASTIBD_DATA=./data     # or set the path directly
 
-cd code
 python run_all.py               # tables, figures and the reproduction check
 ```
 
@@ -68,7 +67,7 @@ python verify.py                  # reproduction check only
 
 ## Reproduction check
 
-`code/verify.py` recomputes 87 numbers reported in the manuscript — the study
+`verify.py` recomputes 87 numbers reported in the manuscript — the study
 population, the spleen-stiffness distribution and reference limits, the
 geometric mean ratios, the Cochran–Armitage trend tests, all Firth models of
 Table 3B, and the discordance and haematological results — and compares each
@@ -82,14 +81,14 @@ with the published value. It exits with a non-zero status if any check fails.
 
 | file | purpose |
 | --- | --- |
-| `code/prep.py` | reads the SPSS files, drops identifiers, derives the analysis variables |
-| `code/firth.py` | Firth penalised logistic regression, Cochran–Armitage trend test, Wilson intervals |
-| `code/analysis_tables.py` | Tables 1, 2A, 2B, 3A, 3B and 4 |
-| `code/analysis_supplementary.py` | Supplementary Tables S1–S11 |
-| `code/robustness.py` | Table 3C and the leave-one-out analysis (Supplementary Table S12) |
-| `code/figures.py` | Figures 1–3 and Supplementary Figures S1–S4 |
-| `code/verify.py` | reproduction check against the published numbers |
-| `code/run_all.py` | runs all of the above |
+| `prep.py` | reads the SPSS files, drops identifiers, derives the analysis variables |
+| `firth.py` | Firth penalised logistic regression, Cochran–Armitage trend test, Wilson intervals |
+| `analysis_tables.py` | Tables 1, 2A, 2B, 3A, 3B and 4 |
+| `analysis_supplementary.py` | Supplementary Tables S1–S11 |
+| `robustness.py` | Table 3C and the leave-one-out analysis (Supplementary Table S12) |
+| `figures.py` | Figures 1–3 and Supplementary Figures S1–S4 |
+| `verify.py` | reproduction check against the published numbers |
+| `run_all.py` | runs all of the above |
 
 ## Statistical methods implemented here
 

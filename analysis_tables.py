@@ -24,7 +24,8 @@ from scipy import stats
 import prep
 from firth import cochran_armitage, firth_logit
 
-OUT = Path(__file__).resolve().parent.parent / "outputs"
+_HERE = Path(__file__).resolve().parent
+OUT = (_HERE.parent if _HERE.name == "code" else _HERE) / "outputs"
 Z = 1.959963984540054
 
 
