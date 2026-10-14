@@ -2,12 +2,13 @@
 
 The analysis reads two SPSS files that are not distributed with this repository
 (see the README). The tables below list every source variable the code uses,
-the analysis name it is renamed to in `code/prep.py`, and its coding. Variables
+the analysis name it is renamed to in `prep.py`, and its coding. Variables
 present in the source files but not listed here are not used.
 
 Both files carry the same variable names; the combined file additionally
-contains `hastasağlıklı` (1 = patient with IBD, 2 = healthy participant), which
-is used to select the reference sample.
+contains `hastasağlıklı` (1 = patient with IBD, 2 = participant without IBD;
+labelled "sağlıklı" in the file), which is used to select the reference sample
+of adults without IBD or known liver disease.
 
 ## Dropped on load
 
@@ -69,6 +70,8 @@ output.
 | `AZAdozu` | `aza_mg_day` | maintenance daily dose, mg/day (0 in non-users) |
 | `AZAsüresiay` | `aza_months` | duration of exposure, months (0 in non-users) |
 | `Merkaptopürin` | `mercaptopurine` | 1 = ever exposed |
+| `Merkaptopürindozu` | `mp_mg_day` | maintenance daily dose of mercaptopurine, mg/day (used in users only) |
+| `Merkaptopürinsüresiay` | `mp_months` | duration of mercaptopurine exposure, months (used in users only) |
 | `AntiTNF` | `antitnf` | 1 = ever exposed |
 | `AntiTNFsüresiay` | `antitnf_months` | months |
 | `Methotrexate` | `methotrexate` | 1 = ever exposed |
@@ -95,6 +98,12 @@ output.
 
 Complete-case analysis is used throughout and the number of observations is
 reported for every model. Medication history is unavailable for 5 of the 271
-analysed patients; the IQR/median of the spleen examination is unrecorded for
-15; alcohol use, waist circumference, imaging findings and flare data are
-available in subsets, which is why model denominators differ between analyses.
+analysed patients. In one further patient the azathioprine field is blank while
+mercaptopurine is recorded as never used; this patient counts as
+thiopurine-unexposed but has no cumulative dose or duration. Two azathioprine
+users have no recorded duration (one of them also no daily dose), so a
+cumulative thiopurine dose is available for 192 of the 194 exposed patients.
+The IQR/median of the spleen examination is unrecorded for 15 patients; alcohol
+use (unrecorded in 42 of the 266 patients with a medication history), waist
+circumference, imaging findings and flare data are available in subsets, which
+is why model denominators differ between analyses.

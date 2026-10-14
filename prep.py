@@ -1,24 +1,37 @@
 """Data preparation for the ELASTIBD spleen-stiffness analysis.
 
 The analysis reads two SPSS files that are *not* part of this repository
-(see README and docs/data_dictionary.md):
+(see README.md and data_dictionary.md):
 
 * ``listev20-sadecehastalar.sav``  - patients with inflammatory bowel disease
-* ``listev18_hastavekontrol.sav``  - patients plus the healthy reference sample
+* ``listev18_hastavekontrol.sav``  - patients plus the reference sample (adults
+  without inflammatory bowel disease or known liver disease)
 
 Set the directory that holds them with the environment variable
 ``ELASTIBD_DATA`` (default: ``./data``).
 
 Direct identifiers present in the source files (name, national identity number,
-telephone number, date of birth, hospital file number) are dropped immediately
-after reading and never enter any derived object or output file.
+telephone number, date of birth, hospital file number, record number,
+examination date, city of residence) are dropped immediately after reading and
+never enter any derived object or output file.
 
 Analysis sets
 -------------
 attempted  : spleen examination attempted (a value was recorded or the
              examination was coded as unsuccessful)
 analysis   : valid spleen stiffness measurement (the primary analysis set)
-reference  : healthy participants with a valid measurement
+reference  : reference participants (adults without IBD) with a valid measurement
+
+Exposure definitions
+--------------------
+Thiopurine exposure is ever exposure to azathioprine or mercaptopurine. The
+cumulative thiopurine dose is expressed in grams of azathioprine equivalent:
+mercaptopurine doses are multiplied by ``MP_TO_AZA`` (2.08), the conventional
+factor combining the molar mass ratio of azathioprine to mercaptopurine
+(277.3 / 152.2 = 1.82) with the approximately 88 % conversion of azathioprine
+to mercaptopurine, and sequential azathioprine and mercaptopurine periods are
+summed. Thiopurine duration is the sum of the azathioprine and mercaptopurine
+months. Daily dose and weight-adjusted dose remain azathioprine-specific.
 """
 
 from __future__ import annotations
@@ -45,7 +58,7 @@ IDENTIFIERS = [
     "yasadıgısehir",  # city of residence
 ]
 
-#: Source variable -> analysis variable. Documented in docs/data_dictionary.md.
+#: Source variable -> analysis variable. Documented in data_dictionary.md.
 RENAME = {
     # elastography
     "DalakmedkPa": "ssm",
@@ -89,6 +102,8 @@ RENAME = {
     "AZAdozu": "aza_mg_day",
     "AZAsüresiay": "aza_months",
     "Merkaptopürin": "mercaptopurine",
+    "Merkaptopürindozu": "mp_mg_day",
+    "Merkaptopürinsüresiay": "mp_months",
     "AntiTNF": "antitnf",
     "AntiTNFsüresiay": "antitnf_months",
     "Methotrexate": "methotrexate",
@@ -124,6 +139,14 @@ LSM_SIGNIFICANT_FIBROSIS = 7.2
 CAP_STEATOSIS = 248.0
 RELIABILITY_IQR_MEDIAN = 30.0   # sensitivity subset only, never an exclusion
 DEVICE_CEILING = 100.0
+
+#: Mercaptopurine -> azathioprine-equivalent conversion factor (see module docstring).
+MP_TO_AZA = 2.08
+#: Molar mass ratio alone (complete conversion assumed); sensitivity analysis only.
+MP_TO_AZA_MOLAR = 1.82
+
+CUMULATIVE_LABELS = ["<= 100 g", "101-300 g", "> 300 g"]
+DURATION_LABELS = ["<= 12 months", "13-48 months", "> 48 months"]
 
 
 def _read(path: Path) -> pd.DataFrame:
@@ -185,6 +208,10 @@ def _patient_derivations(df: pd.DataFrame) -> pd.DataFrame:
         df["aza_months"].where(users), bins=[-0.1, 12, 48, 1e6],
         labels=["<= 12 months", "13-48 months", "> 48 months"],
     )
+    df["aza_mg_kg_cat"] = pd.cut(
+        df["aza_mg_kg"].where(users), bins=[-np.inf, 1.5, 2.0, np.inf], right=False,
+        labels=["< 1.5 mg/kg", "1.5-1.99 mg/kg", ">= 2.0 mg/kg"],
+    )
     df["aza_cumulative_cat"] = pd.cut(
         df["aza_cumulative_g"].where(users), bins=[-0.1, 100, 300, 1e6],
         labels=["<= 100 g", "101-300 g", "> 300 g"],
@@ -216,6 +243,36 @@ def _patient_derivations(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["mesalazine"] = (df["mesalazine_dose"] > 0).astype(float).where(
         df["mesalazine_dose"].notna())
+    return add_thiopurine_equivalents(df)
+
+
+def add_thiopurine_equivalents(df: pd.DataFrame, factor: float = MP_TO_AZA) -> pd.DataFrame:
+    """Cumulative thiopurine dose (azathioprine equivalent) and thiopurine duration.
+
+    ``thio_cumulative_g`` = azathioprine grams + ``factor`` x mercaptopurine grams;
+    ``thio_months`` = azathioprine months + mercaptopurine months. Missing
+    information propagates: when the azathioprine or mercaptopurine history is
+    unknown, or a user's dose or duration is missing, the total is missing too.
+    """
+    df = df.copy()
+    mp_user = df["mercaptopurine"] == 1
+    known = df["mercaptopurine"].notna()
+    mp_g = (df["mp_mg_day"] * df["mp_months"] * 30.0 / 1000.0).where(mp_user, 0.0).where(known)
+    mp_months = df["mp_months"].where(mp_user, 0.0).where(known)
+    df["mp_cumulative_g"] = mp_g
+    df["thio_cumulative_g"] = df["aza_cumulative_g"] + factor * mp_g
+    df["thio_months"] = df["aza_months"] + mp_months
+    thio_user = df["thiopurine"] == 1
+    df["thio_user"] = thio_user.astype(float).where(df["thiopurine"].notna())
+    for col, out, bins, labels in [
+            ("thio_cumulative_g", "thio_cumulative_cat4", [-0.1, 100, 300, 1e6], CUMULATIVE_LABELS),
+            ("thio_months", "thio_months_cat4", [-0.1, 12, 48, 1e6], DURATION_LABELS)]:
+        cat = pd.cut(df[col].where(thio_user), bins=bins, labels=labels)
+        lvl = pd.Series(pd.NA, index=df.index, dtype="object")
+        lvl[(df["thiopurine"] == 0) & df[col].notna()] = "none"
+        lvl[cat.notna()] = cat[cat.notna()].astype(str)
+        df[out] = pd.Categorical(lvl, categories=["none"] + labels, ordered=True)
+        df[out.replace("_cat4", "_cat")] = cat
     return df
 
 
@@ -231,7 +288,7 @@ def load_patients(data_dir: Path | str | None = None) -> pd.DataFrame:
 
 
 def load_reference(data_dir: Path | str | None = None) -> pd.DataFrame:
-    """Healthy reference participants in whom an examination was attempted."""
+    """Reference participants (adults without IBD) in whom an examination was attempted."""
     d = Path(data_dir) if data_dir is not None else DATA_DIR
     df = _read(d / REFERENCE_FILE)
     df = df.loc[df["hastasağlıklı"] == 2].copy()
@@ -242,6 +299,12 @@ def load_reference(data_dir: Path | str | None = None) -> pd.DataFrame:
 def analysis_set(df: pd.DataFrame) -> pd.DataFrame:
     """Restrict to participants with a valid spleen stiffness measurement."""
     return df.loc[df["ssm"].notna()].copy()
+
+
+def n_cohort(data_dir: Path | str | None = None) -> int:
+    """Number of patients in the ELASTIBD baseline cohort file (Figure 1)."""
+    d = Path(data_dir) if data_dir is not None else DATA_DIR
+    return len(_read(d / PATIENT_FILE))
 
 
 def load_all(data_dir: Path | str | None = None):

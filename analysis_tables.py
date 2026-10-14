@@ -3,10 +3,12 @@
 Produces, in ``outputs/``:
 
 * ``table1_characteristics.csv``      - patient characteristics by thiopurine exposure
+                                         (Table 1 and Supplementary Table S14)
 * ``table2a_categorical_exposure.csv`` - exposure categories and the SSM distribution
 * ``table2b_continuous_exposure.csv``  - continuous exposure metrics (geometric mean ratios)
 * ``table3a_thresholds_by_category.csv`` - proportions above thresholds, trend tests
-* ``table3b_firth_models.csv``         - adjusted odds ratios (Firth)
+* ``table3b_firth_models.csv``         - adjusted odds ratios (Firth; profile penalised-likelihood
+                                         95 % CI and penalised likelihood-ratio p)
 * ``table4_marked_cases.csv``          - the patients with SSM >= 40 kPa
 
 Run with ``python run_all.py`` or directly.
@@ -22,7 +24,7 @@ import statsmodels.api as sm
 from scipy import stats
 
 import prep
-from firth import cochran_armitage, firth_logit
+from firth import cochran_armitage, firth_profile
 
 _HERE = Path(__file__).resolve().parent
 OUT = (_HERE.parent if _HERE.name == "code" else _HERE) / "outputs"
@@ -108,17 +110,33 @@ def gmr_categorical(df, cat_col, reference, covars=("age", "male", "bmi", "alcoh
     return out
 
 
-def firth_or(df, exposure, unit, extra=(), outcome="ssm_ge_40"):
-    """Adjusted OR per `unit` of exposure from Firth penalised logistic regression."""
+def firth_or(df, exposure, unit, extra=(), outcome="ssm_ge_40", ci=True):
+    """Adjusted OR per `unit` of exposure from Firth penalised logistic regression
+    (Model 1 covariates age, sex and BMI plus `extra`).
+
+    ``low``/``high`` are profile penalised-likelihood 95 % limits and ``p`` the
+    penalised likelihood-ratio p-value, as reported in the manuscript; the Wald
+    values are returned as ``wald_low``, ``wald_high`` and ``wald_p``.
+    """
     cols = [exposure, "age", "male", "bmi"] + list(extra)
     d = df.dropna(subset=[outcome] + cols).copy()
     cols = _drop_constant(d, cols, exposure)
     d[exposure] = d[exposure] / unit
-    fit = firth_logit(d[cols].astype(float), d[outcome].astype(float).values)
-    row = fit["table"].set_index("term").loc[exposure]
+    fit = firth_profile(d[cols].astype(float), d[outcome].astype(float).values,
+                        terms=[exposure], ci=ci)
+    t = fit["terms"][exposure]
     return dict(n=fit["n"], events=fit["events"], **{
-        "or": float(row.OR), "low": float(row.ci_low), "high": float(row.ci_high),
-        "p": float(row.p)})
+        "or": t["or"], "low": t.get("pl_low", np.nan), "high": t.get("pl_high", np.nan),
+        "p": t["plrt_p"], "wald_low": t["wald_low"], "wald_high": t["wald_high"],
+        "wald_p": t["wald_p"]})
+
+
+def fmt_p(p):
+    """Journal-style p-value: < 0.001, three decimals below 0.1, otherwise two
+    (decided on the value rounded to three decimals, so that 0.0996 prints as 0.10)."""
+    if p < 0.001:
+        return "< 0.001"
+    return f"{p:.3f}" if round(p, 3) < 0.1 else f"{p:.2f}"
 
 
 # ---------------------------------------------------------------------------
@@ -132,11 +150,11 @@ def table1(pat: pd.DataFrame) -> pd.DataFrame:
     def cont(label, col, d=1):
         rows.append([label, med_iqr(pat[col], d), med_iqr(exposed[col], d),
                      med_iqr(unexposed[col], d),
-                     f"{mannwhitney(exposed[col], unexposed[col]):.3g}"])
+                     fmt_p(mannwhitney(exposed[col], unexposed[col]))])
 
     def binr(label, col):
         rows.append([label, n_pct(pat[col]), n_pct(exposed[col]), n_pct(unexposed[col]),
-                     f"{fisher(exposed[col], unexposed[col]):.3g}"])
+                     fmt_p(fisher(exposed[col], unexposed[col]))])
 
     cont("Age (years)", "age", 0)
     binr("Male sex", "male")
@@ -181,15 +199,22 @@ def table1(pat: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Table 2
 # ---------------------------------------------------------------------------
+LEVEL_ORDER = {"aza_combo": ["Neither", "Anti-TNF without AZA", "AZA monotherapy", "AZA + anti-TNF"]}
+
+
 def table2a(pat: pd.DataFrame) -> pd.DataFrame:
-    users = pat[pat["aza_user"] == 1]
+    users = pat[pat["aza_user"] == 1]          # azathioprine users: daily and weight-adjusted dose
+    thio_users = pat[pat["thio_user"] == 1]    # thiopurine users: duration and cumulative dose
     blocks = [
-        ("Thiopurine exposure", pat, "thiopurine", {0.0: "Not exposed", 1.0: "Exposed"}, "Not exposed"),
+        ("Thiopurine exposure (azathioprine or mercaptopurine)", pat, "thiopurine",
+         {0.0: "Not exposed", 1.0: "Exposed"}, "Not exposed"),
         ("Azathioprine exposure", pat, "aza", {0.0: "Not exposed", 1.0: "Exposed"}, "Not exposed"),
         ("Treatment regimen", pat, "aza_combo", None, "Neither"),
         ("Azathioprine daily dose (users only)", users, "aza_dose_cat", None, "100 mg"),
-        ("Azathioprine duration (users only)", users, "aza_duration_cat", None, "<= 12 months"),
-        ("Azathioprine cumulative dose (users only)", users, "aza_cumulative_cat", None, "<= 100 g"),
+        ("Azathioprine weight-adjusted dose (users only)", users, "aza_mg_kg_cat", None, "< 1.5 mg/kg"),
+        ("Thiopurine duration (users only)", thio_users, "thio_months_cat", None, "<= 12 months"),
+        ("Cumulative thiopurine dose, azathioprine equivalent (users only)", thio_users,
+         "thio_cumulative_cat", None, "<= 100 g"),
     ]
     rows = []
     for name, df, col, mapping, ref in blocks:
@@ -199,8 +224,14 @@ def table2a(pat: pd.DataFrame) -> pd.DataFrame:
         crude = (stats.kruskal(*groups).pvalue if len(groups) > 2
                  else stats.mannwhitneyu(groups[0], groups[1]).pvalue)
         adj = gmr_categorical(d, "_lvl", ref)
-        rows.append([name, "", "", "", "", "", f"{crude:.3g}", ""])
-        order = [ref] + [l for l in d["_lvl"].unique() if l != ref]
+        rows.append([name, "", "", "", "", "", fmt_p(crude), ""])
+        if mapping:
+            levels = list(mapping.values())
+        elif hasattr(df[col], "cat"):
+            levels = list(df[col].cat.categories)
+        else:
+            levels = LEVEL_ORDER.get(col, list(d["_lvl"].unique()))
+        order = [l for l in levels if l in set(d["_lvl"])]
         for lvl in order:
             g = d[d["_lvl"] == lvl]
             a = adj.get(lvl)
@@ -209,7 +240,7 @@ def table2a(pat: pd.DataFrame) -> pd.DataFrame:
                 f"{g['ssm'].mean():.1f} +/- {g['ssm'].std():.1f}",
                 f"{100 * g['ssm_ge_30'].mean():.1f}%", f"{100 * g['ssm_ge_40'].mean():.1f}%", "",
                 "1 (reference)" if lvl == ref else
-                f"{a['gmr']:.2f} ({a['low']:.2f}-{a['high']:.2f}); p = {a['p']:.2f}"])
+                f"{a['gmr']:.2f} ({a['low']:.2f}-{a['high']:.2f}); p = {fmt_p(a['p'])}"])
     return pd.DataFrame(rows, columns=[
         "Exposure", "n", "SSM median (IQR)", "SSM mean +/- SD", "SSM >= 30 kPa",
         "SSM >= 40 kPa", "Crude p", "Adjusted GMR (95% CI)"])
@@ -217,35 +248,39 @@ def table2a(pat: pd.DataFrame) -> pd.DataFrame:
 
 def table2b(pat: pd.DataFrame) -> pd.DataFrame:
     users = pat[pat["aza_user"] == 1]
-    metrics = [("Daily dose (mg/day)", "aza_mg_day", 25, "per 25 mg"),
-               ("Weight-adjusted dose (mg/kg/day)", "aza_mg_kg", 0.5, "per 0.5 mg/kg"),
-               ("Duration (months)", "aza_months", 12, "per 12 months"),
-               ("Cumulative dose (g)", "aza_cumulative_g", 100, "per 100 g")]
+    thio_users = pat[pat["thio_user"] == 1]
+    metrics = [("Azathioprine daily dose (mg/day), azathioprine users", users, "aza_mg_day", 25, "per 25 mg"),
+               ("Azathioprine weight-adjusted dose (mg/kg/day), azathioprine users", users,
+                "aza_mg_kg", 0.5, "per 0.5 mg/kg"),
+               ("Thiopurine duration (months), thiopurine users", thio_users, "thio_months", 12,
+                "per 12 months"),
+               ("Cumulative thiopurine dose (g, azathioprine equivalent), thiopurine users",
+                thio_users, "thio_cumulative_g", 100, "per 100 g")]
     rows = []
-    for label, col, unit, unit_label in metrics:
-        d = users.dropna(subset=[col, "ssm"])
+    for label, df, col, unit, unit_label in metrics:
+        d = df.dropna(subset=[col, "ssm"])
         rho, p_rho = stats.spearmanr(d[col], d["ssm"])
-        crude = gmr(users, col, unit, covars=())
-        adj = gmr(users, col, unit)
-        rows.append([label, len(d), f"rho = {rho:+.3f}; p = {p_rho:.3g}", unit_label,
-                     f"{crude['gmr']:.3f} ({crude['low']:.3f}-{crude['high']:.3f}); p = {crude['p']:.3g}",
-                     f"{adj['gmr']:.3f} ({adj['low']:.3f}-{adj['high']:.3f}); p = {adj['p']:.3g}"])
+        crude = gmr(df, col, unit, covars=())
+        adj = gmr(df, col, unit)
+        rows.append([label, len(d), f"rho = {rho:+.3f}; p = {fmt_p(p_rho)}", unit_label,
+                     f"{crude['gmr']:.3f} ({crude['low']:.3f}-{crude['high']:.3f}); p = {fmt_p(crude['p'])}",
+                     f"{adj['gmr']:.3f} ({adj['low']:.3f}-{adj['high']:.3f}); p = {fmt_p(adj['p'])}"])
     return pd.DataFrame(rows, columns=[
-        "Azathioprine exposure metric (users only)", "n", "Spearman correlation with SSM",
+        "Exposure metric (users only)", "n", "Spearman correlation with SSM",
         "Unit", "Crude GMR (95% CI)", "Adjusted GMR (95% CI)"])
 
 
 # ---------------------------------------------------------------------------
 # Table 3
 # ---------------------------------------------------------------------------
-CAT4 = [("Cumulative azathioprine dose", "aza_cumulative_cat4"),
-        ("Azathioprine duration", "aza_duration_cat4"),
-        ("Azathioprine daily dose", "aza_dose_cat4")]
+CAT4 = [("Cumulative thiopurine dose (azathioprine equivalent)", "thio_cumulative_cat4", "No thiopurine"),
+        ("Thiopurine duration", "thio_months_cat4", "No thiopurine"),
+        ("Azathioprine daily dose", "aza_dose_cat4", "No azathioprine")]
 
 
 def table3a(pat: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for label, col in CAT4:
+    for label, col, none_label in CAT4:
         d = pat.dropna(subset=[col])
         grp = d.groupby(col, observed=False)
         counts = grp.agg(n=("ssm", "size"), e40=("ssm_ge_40", "sum"), e30=("ssm_ge_30", "sum"))
@@ -254,13 +289,13 @@ def table3a(pat: pd.DataFrame) -> pd.DataFrame:
         t40_u = cochran_armitage(counts["e40"][1:], counts["n"][1:])[1]
         t30_all = cochran_armitage(counts["e30"], counts["n"])[1]
         t30_u = cochran_armitage(counts["e30"][1:], counts["n"][1:])[1]
-        rows.append([label, "", "", "", "", f"{t40_all:.3g} / {t40_u:.3g}",
-                     f"{t30_all:.3g} / {t30_u:.3g}"])
+        rows.append([label, "", "", "", "", f"{fmt_p(t40_all)} / {fmt_p(t40_u)}",
+                     f"{fmt_p(t30_all)} / {fmt_p(t30_u)}"])
         for lvl in counts.index:
             g = d[d[col] == lvl]
             n = int(counts.loc[lvl, "n"])
             rows.append([
-                f"  {'No azathioprine' if lvl == 'none' else lvl}", n, med_iqr(g["ssm"]),
+                f"  {none_label if lvl == 'none' else lvl}", n, med_iqr(g["ssm"]),
                 f"{int(counts.loc[lvl, 'e40'])} ({100 * counts.loc[lvl, 'e40'] / n:.1f}%)",
                 f"{int(counts.loc[lvl, 'e30'])} ({100 * counts.loc[lvl, 'e30'] / n:.1f}%)", "", ""])
     return pd.DataFrame(rows, columns=[
@@ -276,22 +311,27 @@ MODELS = [("Model 1: age, sex, BMI", ()),
 
 
 def table3b(pat: pd.DataFrame) -> pd.DataFrame:
-    users = pat[pat["aza_user"] == 1]
+    thio_users = pat[pat["thio_user"] == 1]
     rows = []
-    for pop_label, df in [("All patients (non-users = 0)", pat), ("Azathioprine users only", users)]:
-        for exp_label, col, unit in [("Cumulative azathioprine dose, per 100 g", "aza_cumulative_g", 100),
-                                     ("Azathioprine duration, per 12 months", "aza_months", 12)]:
+    for pop_label, df in [("All patients (non-users = 0)", pat), ("Thiopurine users only", thio_users)]:
+        for exp_label, col, unit in [("Cumulative thiopurine dose, per 100 g", "thio_cumulative_g", 100),
+                                     ("Thiopurine duration, per 12 months", "thio_months", 12)]:
             for model_label, extra in MODELS:
                 r = firth_or(df, col, unit, extra)
                 rows.append([pop_label, exp_label, model_label, f"{r['n']} / {r['events']}",
-                             f"{r['or']:.2f} ({r['low']:.2f}-{r['high']:.2f})", f"{r['p']:.3f}"])
+                             f"{r['or']:.2f} ({r['low']:.2f}-{r['high']:.2f})", fmt_p(r["p"]),
+                             f"{r['or']:.2f} ({r['wald_low']:.2f}-{r['wald_high']:.2f})",
+                             fmt_p(r["wald_p"])])
     return pd.DataFrame(rows, columns=[
         "Population", "Exposure metric", "Adjustment", "n / events",
-        "OR for SSM >= 40 kPa (95% CI)", "p"])
+        "OR for SSM >= 40 kPa (profile penalised-likelihood 95% CI)",
+        "p (penalised likelihood ratio)", "OR (Wald 95% CI)", "p (Wald)"])
 
 
 def table4(pat: pd.DataFrame) -> pd.DataFrame:
     cases = pat[pat["ssm_ge_40"] == 1].sort_values("ssm", ascending=False)
+    # none of these patients received mercaptopurine, so the azathioprine dose,
+    # duration and cumulative dose equal the thiopurine values
     out = pd.DataFrame({
         "Case": [f"#{i}" for i in range(1, len(cases) + 1)],
         "Age (y)": cases["age"].astype("Int64").values,
