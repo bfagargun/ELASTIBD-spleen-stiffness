@@ -3,18 +3,20 @@ message: "If you use this code, please cite both the software and the manuscript
 title: "ELASTIBD spleen stiffness: analysis code"
 abstract: >-
   Python code reproducing the tables, figures and statistical models of the
-  ELASTIBD analysis of cumulative azathioprine exposure and markedly elevated
-  spleen stiffness in inflammatory bowel disease, including a Firth penalised
-  logistic regression implementation and a reproduction check against the
-  published numbers.
+  ELASTIBD analysis of thiopurine exposure and spleen stiffness in
+  inflammatory bowel disease, including cumulative thiopurine dose in
+  azathioprine equivalents, a Firth penalised logistic regression
+  implementation with profile penalised-likelihood inference, and a
+  reproduction check against the published numbers.
 type: software
 license: MIT
-version: 1.0.0
-date-released: 2026-09-14
+version: 1.1.0
+date-released: 2026-10-14
 repository-code: "https://github.com/bfagargun/ELASTIBD-spleen-stiffness"
 keywords:
   - spleen stiffness
   - transient elastography
+  - thiopurines
   - azathioprine
   - porto-sinusoidal vascular disease
   - inflammatory bowel disease
